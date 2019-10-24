@@ -75,24 +75,25 @@ let page = null;
       const time = document.querySelector(`${firstAvailableRow}>td:nth-of-type(2n)`).textContent.trim();
       return { date, time };
     });
-    console.log(date, time);
+    console.log('Soonest appointment available', date, time);
     await page.screenshot({ path: `output/schedule.png` });
     // Check to see if we've already notified about this date
     const cancellationsString = fs.readFileSync('output/cancellations.txt', {flag: 'a+'}).toString();
     const cancellations = cancellationsString.split('\n');
     if (cancellations.includes(`${date} ${time}`)){
+      console.log("We've already notified for this date, exiting");
       return browser.close();
     }
     
     // I know I should probablty make this into a node http request instead of using a child process, but multipart is hard :(
     const uploadOutput = await exec(`curl -F'file=@output/schedule.png' https://0x0.st/`);
     const uploadURL = uploadOutput.stdout.trim();
-    console.log(uploadURL);
 
     //iftttNotification(date, time, uploadURL);
     await exec(`curl -X POST -H "Content-Type: application/json" -d '{"value1":"${date}","value2":"${time}","value3":"${uploadURL}"}' \
       https://maker.ifttt.com/trigger/${process.env.IFTTT_SERVICE}/with/key/${process.env.IFTTT_KEY}`);
     fs.appendFileSync('output/cancellations.txt', `${date} ${time}`);
+    console.log('Notification sent!');
     return browser.close();
   }
   catch (e){
