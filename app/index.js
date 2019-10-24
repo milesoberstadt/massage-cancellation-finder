@@ -1,4 +1,8 @@
 const puppeteer = require('puppeteer');
+const https = require('https');
+const { promisify } = require('util');
+const exec = promisify(require('child_process').exec);
+
 const debug = true;
 let screenshotCounter = 0;
 let page = null;
@@ -15,6 +19,7 @@ let page = null;
   page = await browser.newPage();
   try {
     await page.goto(process.env.MASSAGE_SITE, {waitUntil: 'networkidle2'});
+    await page.setViewport({width: 990, height: 730});
     // Load the home page, sign in
     await page.waitForSelector('input[name="loginname"]');
     await page.focus('input[name="loginname"]');
@@ -61,7 +66,7 @@ let page = null;
       page.click('td.calendar-available a'),
       page.waitForNavigation({ waitUntil: 'networkidle0' })
     ])
-    const soonest = await page.evaluate(() => {
+    const {date, time} = await page.evaluate(() => {
       // Side note, if you're a dev reading this and like software gore, check the output of this on the booking site...
       // document.querySelector('table.appointment-list-style').innerHTML
       const firstAvailableRow = 'table.appointment-list-style>tbody>tr:nth-of-type(2n)';
@@ -69,9 +74,17 @@ let page = null;
       const time = document.querySelector(`${firstAvailableRow}>td:nth-of-type(2n)`).textContent.trim();
       return { date, time };
     });
-    // Note to self, it would be cool to be able to screenshot the schedule here...
-    await screenshot();
-    console.log(soonest);
+    console.log(date, time);
+    await page.screenshot({ path: `output/schedule.png` });
+    
+    // I know I should probablty make this into a node http request instead of using a child process, but multipart is hard :(
+    const uploadOutput = await exec(`curl -F'file=@output/schedule.png' https://0x0.st/`);
+    const uploadURL = uploadOutput.stdout.trim();
+    console.log(uploadURL);
+
+    //iftttNotification(date, time, uploadURL);
+    await exec(`curl -X POST -H "Content-Type: application/json" -d '{"value1":"${date}","value2":"${time}","value3":"${uploadURL}"}' \
+      https://maker.ifttt.com/trigger/${process.env.IFTTT_SERVICE}/with/key/${process.env.IFTTT_KEY}`);
 
     browser.close();
   }
@@ -83,7 +96,7 @@ let page = null;
 
 async function screenshot(){
   if (debug)
-    await page.screenshot({ path: `debug/${screenshotCounter++}.png` });
+    await page.screenshot({ path: `output/${screenshotCounter++}.png` });
 }
 
 async function findNextAvailableMonth(monthsForwardAccpetable = 2) {
@@ -101,4 +114,36 @@ async function findNextAvailableMonth(monthsForwardAccpetable = 2) {
       page.waitForNavigation({ waitUntil: 'networkidle0' })
     ])
   }
+}
+
+// This doesn't work right now, endpoint gives me a 400 error. Working with the http lib sucks
+function iftttNotification(date, time, screenshotURL) {
+  // Here's our POST to IFTTT
+  //`curl -X POST -H "Content-Type: application/json" -d '{"value1":"${date}","value2":"${time}","value3":"${screenshotURL}"}' https://maker.ifttt.com/trigger/${process.env.IFTTT_SERVICE}/with/key/${process.env.IFTTT_KEY}`
+
+  let data = { "value1": date, "value2": time, "value3": screenshotURL };
+  const options = {
+    hostname: 'maker.ifttt.com',
+    path: `/trigger/${process.env.IFTTT_SERVICE}/with/key/${process.env.IFTTT_KEY}`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  };
+
+  return new Promise((resolve) => {
+    const req = https.request(options, (res) => {
+      console.log(`statusCode: ${res.statusCode}: ${res.statusMessage}`);
+      res.on('data', (d) => {
+        process.stdout.write(d);
+        process.stdout.write('done');
+        resolve(d);
+      });
+    });
+
+    req.on('error', (err) => console.log(err));
+
+    req.write(`file=${data}`);
+    req.end();
+  });
 }
