@@ -2,6 +2,7 @@ const puppeteer = require('puppeteer');
 const https = require('https');
 const { promisify } = require('util');
 const exec = promisify(require('child_process').exec);
+const fs = require('fs');
 
 const debug = true;
 let screenshotCounter = 0;
@@ -76,6 +77,12 @@ let page = null;
     });
     console.log(date, time);
     await page.screenshot({ path: `output/schedule.png` });
+    // Check to see if we've already notified about this date
+    const cancellationsString = fs.readFileSync('output/cancellations.txt', {flag: 'a+'}).toString();
+    const cancellations = cancellationsString.split('\n');
+    if (cancellations.includes(`${date} ${time}`)){
+      return browser.close();
+    }
     
     // I know I should probablty make this into a node http request instead of using a child process, but multipart is hard :(
     const uploadOutput = await exec(`curl -F'file=@output/schedule.png' https://0x0.st/`);
@@ -85,8 +92,8 @@ let page = null;
     //iftttNotification(date, time, uploadURL);
     await exec(`curl -X POST -H "Content-Type: application/json" -d '{"value1":"${date}","value2":"${time}","value3":"${uploadURL}"}' \
       https://maker.ifttt.com/trigger/${process.env.IFTTT_SERVICE}/with/key/${process.env.IFTTT_KEY}`);
-
-    browser.close();
+    fs.appendFileSync('output/cancellations.txt', `${date} ${time}`);
+    return browser.close();
   }
   catch (e){
     console.log(e)
