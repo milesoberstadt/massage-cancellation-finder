@@ -92,7 +92,7 @@ let page = null;
     //iftttNotification(date, time, uploadURL);
     await exec(`curl -X POST -H "Content-Type: application/json" -d '{"value1":"${date}","value2":"${time}","value3":"${uploadURL}"}' \
       https://maker.ifttt.com/trigger/${process.env.IFTTT_SERVICE}/with/key/${process.env.IFTTT_KEY}`);
-    fs.appendFileSync('output/cancellations.txt', `${date} ${time}`);
+    fs.appendFileSync('output/cancellations.txt', `${date} ${time}\n`);
     console.log('Notification sent!');
     return browser.close();
   }
